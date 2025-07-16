@@ -1,0 +1,15 @@
+model:
+  d_model: 128
+  n_heads: 8
+  num_layers: 4
+  dropout: 0.1
+train:
+  batch_size: 16
+  lr: 0.001
+  epochs: 10
+data:
+  seq_length: 100  # timesteps
+  num_neural_channels: 32
+  video_embed_dim: 64
+  behavioral_vocab: 10
+  metadata_dim: 5
