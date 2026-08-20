@@ -1,0 +1,15 @@
+model:
+  name: google/gemma-3-270m-it
+  dtype: auto
+  device_map: auto
+experiment:
+  name: belief_compliance
+  position: -1
+  steering_coefficients: [-8, -4, -2, -1, 0, 1, 2, 4, 8]
+  bootstrap_samples: 2000
+  seeds: [0, 1, 2, 3, 4]
+claim_standard:
+  require_probe_control: true
+  require_activation_patch: true
+  require_dose_response: true
+  require_prompt_holdout: true

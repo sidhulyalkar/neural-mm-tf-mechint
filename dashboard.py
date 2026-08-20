@@ -1,87 +1,124 @@
-# interpretability/dashboard.py
-"""
-This module provides a Streamlit dashboard for visualizing attention maps and ablation study results for the multimodal transformer model.
+"""Streamlit research dashboard for Neural MechInt Lab artifacts.
 
-Functions:    
-    main: The main function that runs the Streamlit dashboard.
-    load_model: Loads the model from a checkpoint.
-
-Imports:    
-    streamlit: Module for building Streamlit applications.    
-    torch: Module for defining neural network layers.    
-    yaml: Module for working with YAML files.    
-    model: Module for defining the MultimodalTransformer model.    
-    dataloaders: Module for loading data.    
-    interpretability.attention_analysis: Module for attention analysis.    
-    interpretability.ablation_study: Module for ablation study.    
-    interpretability.cav_analysis: Module for concept activation vector analysis.   
+Run with:
+    streamlit run dashboard.py
 """
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pandas as pd
+import plotly.express as px
 import streamlit as st
-import torch
-import yaml
-from model import MultimodalTransformer
-from dataloaders import get_loader
-from interpretability.attention_analysis import extract_attention_maps
-from interpretability.ablation_study import ablate_heads
-from interpretability.cav_analysis import compute_cav
 
-@st.cache(allow_output_mutation=True)
-def load_model(cfg):
+
+st.set_page_config(page_title="Neural MechInt Lab", page_icon="🧠", layout="wide")
+
+st.title("🧠 Neural MechInt Lab")
+st.caption("Mechanistic interpretability from decodability to causal circuit evidence")
+
+st.markdown(
     """
-    Loads a MultimodalTransformer model from a checkpoint path specified in the configuration dictionary.
+**Claim discipline:** attention maps and probes nominate hypotheses. Activation patching,
+ablation, steering, and circuit-retention tests decide whether those hypotheses deserve
+causal language.
+"""
+)
 
-    Args:
-        cfg (dict): The configuration dictionary containing the model path.
+with st.sidebar:
+    st.header("Evidence ladder")
+    st.markdown(
+        """
+1. **Behavior** — define a scalar target
+2. **Decode** — test information presence
+3. **Localize** — nominate layers/features
+4. **Intervene** — patch, ablate, steer
+5. **Compress** — necessity + sufficiency
+6. **Replicate** — prompts, seeds, models
+"""
+    )
+    artifact = st.file_uploader("Load baseline JSON", type=["json"])
 
-    Returns:
-        model (MultimodalTransformer): The loaded model.
-    """
-    model = MultimodalTransformer(cfg)
-    model.load_state_dict(torch.load(cfg['interpretability']['model_path'], map_location='cpu'))
-    model.eval()
-    return model
+rows = None
+if artifact is not None:
+    rows = json.load(artifact)
+else:
+    default = Path("artifacts/belief_compliance_baseline.json")
+    if default.exists():
+        rows = json.loads(default.read_text())
 
-def main():
-    """
-    The main function that runs the Streamlit dashboard.
+left, right = st.columns([1.3, 1])
 
-    It loads the model, allows the user to specify a fine-tuned checkpoint, and then visualizes the attention maps and ablation study results.
+with left:
+    st.subheader("Flagship study: belief vs. compliance")
+    st.markdown(
+        """
+A factual question is asked twice: once neutrally and once after the user confidently
+asserts an incorrect answer and asks the model to agree. The central metric is the
+**correct-minus-incorrect next-token logit difference**.
+"""
+    )
 
-    The dashboard consists of three sections:
-    1. Attention visualization: The user can select a layer and head to visualize the attention map.
-    2. Ablation study: The user can select a layer and one or more heads to ablate, and then run the ablation study.
-    3. Concept activation vector analysis (placeholder): Compute CAVs on hidden activations (experimentally defined concepts).
+    if rows:
+        df = pd.DataFrame(rows)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        long = df.melt(
+            id_vars=["question"],
+            value_vars=["neutral_logit_diff", "pressured_logit_diff"],
+            var_name="condition",
+            value_name="correct_minus_incorrect_logit",
+        )
+        fig = px.bar(
+            long,
+            x="question",
+            y="correct_minus_incorrect_logit",
+            color="condition",
+            barmode="group",
+            title="Behavioral pressure effect before any mechanistic interpretation",
+        )
+        fig.update_layout(xaxis_title=None, yaxis_title="Δ logit", legend_title=None)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info(
+            "No artifact loaded. Run `mechint belief-compliance` or upload its JSON output. "
+            "The dashboard intentionally does not display fabricated demo findings."
+        )
 
-    """
-    st.title("🔍 Multimodal Transformer Interpretability")
-    cfg = yaml.safe_load(open('configs/config.yaml'))
-    # allow user to specify fine-tuned checkpoint
-    cfg['interpretability'] = {'model_path': st.text_input('Model checkpoint path', 'model.pt')}
-    model = load_model(cfg)
+with right:
+    st.subheader("What would count as a mechanism?")
+    st.markdown(
+        """
+- **Probe:** pressure is decodable from a held-out activation.
+- **Patch:** neutral residual state restores the factual answer under pressure.
+- **Steer:** positive/negative pressure directions yield a coherent dose-response.
+- **Specificity:** the effect beats equal-norm random directions and preserves unrelated behavior.
+- **Circuit:** a sparse feature/component subset is necessary and approximately sufficient.
+- **Replication:** the effect survives unseen facts, paraphrases, seeds, and model sizes.
+"""
+    )
 
-    # Load a single batch
-    loader = get_loader(cfg)
-    batch = next(iter(loader))
-    inputs = dict(zip(['neural','video','behavior','meta','target'], batch))
+    st.subheader("Frontier bridge")
+    st.markdown(
+        """
+The research roadmap connects dense residual interventions to Gemma Scope 2 sparse
+features/transcoders, attribution graphs, cross-model diffing, and MIB-style circuit
+faithfulness evaluation.
+"""
+    )
 
-    # Attention visualization
-    st.header("Attention Maps")
-    layer = st.slider('Layer', 0, cfg['model']['num_layers']-1, 0)
-    head = st.slider('Head', 0, cfg['model']['n_heads']-1, 0)
-    attn = extract_attention_maps(model, inputs, layer, head)
-    st.line_chart(attn)
-
-    # Ablation study
-    st.header("Ablation Study")
-    layer_ab = st.number_input('Layer to ablate', 0, cfg['model']['num_layers']-1, 0)
-    heads_to_ablate = st.multiselect('Heads to ablate', list(range(cfg['model']['n_heads'])))
-    if st.button('Run Ablation'):
-        loss = ablate_heads(model, inputs, layer_ab, heads_to_ablate)
-        st.write(f"Post-ablation loss: {loss:.4f}")
-
-    # CAV analysis (placeholder)
-    st.header("Concept Activation Vectors")
-    st.write("Compute CAVs on hidden activations (experimentally defined concepts).")
-
-if __name__ == '__main__':
-    main()
+st.divider()
+st.subheader("Research sequence")
+roadmap = pd.DataFrame(
+    [
+        (1, "Behavior atlas", "Does pressure actually move factual logits?"),
+        (2, "Layer localization", "Where is pressure/fact information decodable?"),
+        (3, "Activation patching", "Which states causally restore the clean behavior?"),
+        (4, "Steering", "Can the representation control behavior bidirectionally?"),
+        (5, "Sparse mediation", "Can a small SAE/transcoder feature set explain the effect?"),
+        (6, "Attribution graph", "How does evidence flow into answer selection?"),
+        (7, "Model diff", "What changes after instruction tuning or scaling?"),
+    ],
+    columns=["stage", "experiment", "scientific question"],
+)
+st.dataframe(roadmap, use_container_width=True, hide_index=True)
