@@ -15,11 +15,11 @@ class ForwardResult:
 
 
 class HFCausalLMAdapter:
-    """Small, architecture-tolerant hook layer over Hugging Face causal LMs.
+    """Architecture-tolerant hook layer over Hugging Face causal LMs.
 
-    The adapter intentionally hooks *block outputs* (residual stream after each block),
-    which provides a common intervention surface across Gemma, Llama, Qwen, GPT-2,
-    GPT-NeoX and many closely related decoder-only architectures.
+    Block outputs (the post-block residual stream) are used as the common
+    observation/intervention surface across Gemma, Llama, Qwen, GPT-2,
+    GPT-NeoX and closely related decoder-only architectures.
     """
 
     def __init__(self, model, tokenizer):
@@ -39,7 +39,7 @@ class HFCausalLMAdapter:
     ) -> "HFCausalLMAdapter":
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer
-        except ImportError as exc:  # pragma: no cover - optional runtime dependency
+        except ImportError as exc:  # pragma: no cover
             raise ImportError("Install the `frontier` extra: pip install -e '.[frontier]'") from exc
 
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code)
@@ -88,11 +88,9 @@ class HFCausalLMAdapter:
 
     def tokenize(self, prompt: str) -> dict[str, torch.Tensor]:
         batch = self.tokenizer(prompt, return_tensors="pt")
-        return {k: v.to(self.device) for k, v in batch.items()}
+        return {key: value.to(self.device) for key, value in batch.items()}
 
     def single_token_id(self, text: str) -> int | None:
-        """Return a token id only when ``text`` is represented by exactly one token."""
-
         ids = self.tokenizer.encode(text, add_special_tokens=False)
         return int(ids[0]) if len(ids) == 1 else None
 
@@ -154,8 +152,6 @@ class HFCausalLMAdapter:
         source_activation: torch.Tensor,
         position: int = -1,
     ) -> torch.Tensor:
-        """Patch one residual-stream position at a chosen block output."""
-
         block = self.blocks[layer]
 
         def patch_hook(_module, _inputs, output):
@@ -163,9 +159,7 @@ class HFCausalLMAdapter:
             replacement = source_activation.to(device=hidden.device, dtype=hidden.dtype)
             if replacement.ndim == 3:
                 replacement = replacement[:, position, :]
-            elif replacement.ndim == 2:
-                replacement = replacement[:, :]
-            else:
+            elif replacement.ndim != 2:
                 raise ValueError("source_activation must be [B,T,D] or [B,D]")
             patched = hidden.clone()
             patched[:, position, :] = replacement
@@ -179,19 +173,7 @@ class HFCausalLMAdapter:
         finally:
             handle.remove()
 
-    def forward_with_steering(
-        self,
-        prompt: str,
-        *,
-        layer: int,
-        direction: torch.Tensor,
-        coefficient: float,
-        position: int | slice = -1,
-    ) -> torch.Tensor:
-        """Add a representation direction to a block output during a forward pass."""
-
-        block = self.blocks[layer]
-
+    def _steering_hook(self, direction: torch.Tensor, coefficient: float, position: int | slice):
         def steering_hook(_module, _inputs, output):
             hidden = self._hidden(output)
             vector = direction.to(device=hidden.device, dtype=hidden.dtype)
@@ -201,10 +183,53 @@ class HFCausalLMAdapter:
             steered[:, position, :] = steered[:, position, :] + coefficient * vector
             return self._replace_hidden(output, steered)
 
-        handle = block.register_forward_hook(steering_hook)
+        return steering_hook
+
+    def forward_with_steering(
+        self,
+        prompt: str,
+        *,
+        layer: int,
+        direction: torch.Tensor,
+        coefficient: float,
+        position: int | slice = -1,
+    ) -> torch.Tensor:
+        handle = self.blocks[layer].register_forward_hook(self._steering_hook(direction, coefficient, position))
         batch = self.tokenize(prompt)
         try:
             with torch.inference_mode():
                 return self.model(**batch).logits
         finally:
             handle.remove()
+
+    def generate(self, prompt: str, *, max_new_tokens: int = 96, **generation_kwargs) -> str:
+        """Generate text without intervention."""
+        batch = self.tokenize(prompt)
+        prompt_length = batch["input_ids"].shape[-1]
+        with torch.inference_mode():
+            output_ids = self.model.generate(**batch, max_new_tokens=max_new_tokens, **generation_kwargs)
+        generated_ids = output_ids[0, prompt_length:]
+        return self.tokenizer.decode(generated_ids, skip_special_tokens=True)
+
+    def generate_with_steering(
+        self,
+        prompt: str,
+        *,
+        layer: int,
+        direction: torch.Tensor,
+        coefficient: float,
+        position: int | slice = -1,
+        max_new_tokens: int = 96,
+        **generation_kwargs,
+    ) -> str:
+        """Generate while applying the same residual intervention at each decode step."""
+        handle = self.blocks[layer].register_forward_hook(self._steering_hook(direction, coefficient, position))
+        batch = self.tokenize(prompt)
+        prompt_length = batch["input_ids"].shape[-1]
+        try:
+            with torch.inference_mode():
+                output_ids = self.model.generate(**batch, max_new_tokens=max_new_tokens, **generation_kwargs)
+        finally:
+            handle.remove()
+        generated_ids = output_ids[0, prompt_length:]
+        return self.tokenizer.decode(generated_ids, skip_special_tokens=True)
