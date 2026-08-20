@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import numpy as np
 
@@ -31,4 +31,5 @@ def area_under_faithfulness_curve(fractions: Iterable[float], recoveries: Iterab
     if x.ndim != 1 or y.ndim != 1 or len(x) != len(y) or len(x) < 2:
         raise ValueError("fractions and recoveries must be matching one-dimensional arrays")
     order = np.argsort(x)
-    return float(np.trapz(y[order], x[order]))
+    integrate = getattr(np, "trapezoid", np.trapz)
+    return float(integrate(y[order], x[order]))
