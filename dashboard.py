@@ -1,8 +1,4 @@
-"""Streamlit research dashboard for Neural MechInt Lab artifacts.
-
-Run with:
-    streamlit run dashboard.py
-"""
+"""Streamlit dashboard for Neural MechInt research and deployment artifacts."""
 from __future__ import annotations
 
 import json
@@ -12,113 +8,85 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-
-st.set_page_config(page_title="Neural MechInt Lab", page_icon="🧠", layout="wide")
-
-st.title("🧠 Neural MechInt Lab")
-st.caption("Mechanistic interpretability from decodability to causal circuit evidence")
-
-st.markdown(
-    """
-**Claim discipline:** attention maps and probes nominate hypotheses. Activation patching,
-ablation, steering, and circuit-retention tests decide whether those hypotheses deserve
-causal language.
-"""
-)
+st.set_page_config(page_title="Neural MechInt", page_icon="🧠", layout="wide")
+st.title("🧠 Neural MechInt")
+st.caption("Observe → Understand → Control → Learn")
+st.markdown("""
+Mechanistic interpretability becomes operationally valuable when causal evidence can
+**predict a failure, control it selectively, and teach the next model version**.
+This dashboard only visualizes supplied experiment/receipt artifacts. Missing results remain missing.
+""")
 
 with st.sidebar:
-    st.header("Evidence ladder")
-    st.markdown(
-        """
-1. **Behavior** — define a scalar target
-2. **Decode** — test information presence
-3. **Localize** — nominate layers/features
-4. **Intervene** — patch, ablate, steer
-5. **Compress** — necessity + sufficiency
-6. **Replicate** — prompts, seeds, models
-"""
-    )
-    artifact = st.file_uploader("Load baseline JSON", type=["json"])
+    st.header("Artifacts")
+    baseline_upload = st.file_uploader("Belief/compliance baseline", type=["json"], key="baseline")
+    receipt_upload = st.file_uploader("MechGuard state receipt", type=["json"], key="receipt")
+    st.divider()
+    st.markdown("**Evidence ladder**")
+    st.markdown("Behavior → Decode → Localize → Intervene → Compress → Replicate → Deploy → Learn")
+
+research_tab, state_tab, guard_tab, learn_tab, eval_tab = st.tabs(["Research", "MechState", "MechGuard", "MechTune", "MechEval"])
 
 rows = None
-if artifact is not None:
-    rows = json.load(artifact)
-else:
-    default = Path("artifacts/belief_compliance_baseline.json")
-    if default.exists():
-        rows = json.loads(default.read_text())
+if baseline_upload is not None:
+    rows = json.load(baseline_upload)
+elif Path("artifacts/belief_compliance_baseline.json").exists():
+    rows = json.loads(Path("artifacts/belief_compliance_baseline.json").read_text())
+receipt = json.load(receipt_upload) if receipt_upload is not None else None
 
-left, right = st.columns([1.3, 1])
-
-with left:
-    st.subheader("Flagship study: belief vs. compliance")
-    st.markdown(
-        """
-A factual question is asked twice: once neutrally and once after the user confidently
-asserts an incorrect answer and asks the model to agree. The central metric is the
-**correct-minus-incorrect next-token logit difference**.
-"""
-    )
-
+with research_tab:
+    st.subheader("Belief vs. compliance")
+    st.write("Does contradictory social pressure override factual evidence, and where does that computation happen?")
     if rows:
         df = pd.DataFrame(rows)
         st.dataframe(df, use_container_width=True, hide_index=True)
-        long = df.melt(
-            id_vars=["question"],
-            value_vars=["neutral_logit_diff", "pressured_logit_diff"],
-            var_name="condition",
-            value_name="correct_minus_incorrect_logit",
-        )
-        fig = px.bar(
-            long,
-            x="question",
-            y="correct_minus_incorrect_logit",
-            color="condition",
-            barmode="group",
-            title="Behavioral pressure effect before any mechanistic interpretation",
-        )
-        fig.update_layout(xaxis_title=None, yaxis_title="Δ logit", legend_title=None)
-        st.plotly_chart(fig, use_container_width=True)
+        long = df.melt(id_vars=["question"], value_vars=["neutral_logit_diff", "pressured_logit_diff"], var_name="condition", value_name="correct_minus_incorrect_logit")
+        st.plotly_chart(px.bar(long, x="question", y="correct_minus_incorrect_logit", color="condition", barmode="group"), use_container_width=True)
     else:
-        st.info(
-            "No artifact loaded. Run `mechint belief-compliance` or upload its JSON output. "
-            "The dashboard intentionally does not display fabricated demo findings."
-        )
+        st.info("No baseline artifact loaded. Run `mechint belief-compliance`. No synthetic findings are substituted.")
 
-with right:
-    st.subheader("What would count as a mechanism?")
-    st.markdown(
-        """
-- **Probe:** pressure is decodable from a held-out activation.
-- **Patch:** neutral residual state restores the factual answer under pressure.
-- **Steer:** positive/negative pressure directions yield a coherent dose-response.
-- **Specificity:** the effect beats equal-norm random directions and preserves unrelated behavior.
-- **Circuit:** a sparse feature/component subset is necessary and approximately sufficient.
-- **Replication:** the effect survives unseen facts, paraphrases, seeds, and model sizes.
-"""
-    )
+with state_tab:
+    st.subheader("Internal state trajectory")
+    if receipt:
+        records = []
+        for state in receipt.get("trajectory", {}).get("states", []):
+            for name, signal in state.get("signals", {}).items():
+                records.append({"layer": state["layer"], "signal": name, "value": signal["value"], "confidence": signal.get("confidence", 1.0)})
+        if records:
+            state_df = pd.DataFrame(records)
+            st.plotly_chart(px.line(state_df, x="layer", y="value", color="signal", markers=True, title="Mechanistic state across depth"), use_container_width=True)
+            st.dataframe(state_df, use_container_width=True, hide_index=True)
+        else:
+            st.warning("The receipt contains no state signals.")
+    else:
+        st.info("Upload a MechGuard receipt to inspect a real state trajectory.")
 
-    st.subheader("Frontier bridge")
-    st.markdown(
-        """
-The research roadmap connects dense residual interventions to Gemma Scope 2 sparse
-features/transcoders, attribution graphs, cross-model diffing, and MIB-style circuit
-faithfulness evaluation.
-"""
-    )
+with guard_tab:
+    st.subheader("Runtime control decision")
+    if receipt:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Decision", receipt.get("decision", "unknown"))
+        c2.metric("Risk score", f"{receipt.get('metrics', {}).get('risk_score', 0.0):.3f}")
+        c3.metric("Events", int(receipt.get("metrics", {}).get("event_count", 0)))
+        st.write("**Reasons**")
+        for reason in receipt.get("reasons", []):
+            st.write("•", reason)
+        st.write("**Intervention**")
+        st.json(receipt.get("intervention"))
+    else:
+        st.info("Receipts make every intervention auditable: state → monitor → policy → action.")
 
-st.divider()
-st.subheader("Research sequence")
-roadmap = pd.DataFrame(
-    [
-        (1, "Behavior atlas", "Does pressure actually move factual logits?"),
-        (2, "Layer localization", "Where is pressure/fact information decodable?"),
-        (3, "Activation patching", "Which states causally restore the clean behavior?"),
-        (4, "Steering", "Can the representation control behavior bidirectionally?"),
-        (5, "Sparse mediation", "Can a small SAE/transcoder feature set explain the effect?"),
-        (6, "Attribution graph", "How does evidence flow into answer selection?"),
-        (7, "Model diff", "What changes after instruction tuning or scaling?"),
-    ],
-    columns=["stage", "experiment", "scientific question"],
-)
-st.dataframe(roadmap, use_container_width=True, hide_index=True)
+with learn_tab:
+    st.subheader("Causal feedback learning")
+    st.markdown("Only cases where an intervention **actually improves the target metric** are candidates for training. The next adaptation can then use counterfactual data, representation objectives, Circuit-LoRA, or intervention distillation.")
+    st.code("intervention → measured gain → training candidate → targeted adapter → full re-evaluation")
+
+with eval_tab:
+    st.subheader("Deployment scorecard")
+    st.markdown("A successful controller needs more than accuracy. Track false compliance, mechanistic failure recall, intervention success, collateral KL, intervention rate, and latency overhead.")
+    st.dataframe(pd.DataFrame([
+        ("Behavior", "task accuracy / false-compliance rate"),
+        ("State", "failure recall / calibration / crossover depth"),
+        ("Causal", "necessity / sufficiency / collateral KL"),
+        ("Operational", "intervention rate / latency / escalation"),
+    ], columns=["dimension", "examples"]), use_container_width=True, hide_index=True)
