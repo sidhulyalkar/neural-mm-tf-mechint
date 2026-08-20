@@ -1,0 +1,18 @@
+profile: grounded-rag
+signals:
+  retrieval_grounding:
+    threshold: 0.70
+  compliance_pressure:
+    threshold: 0.65
+  answer_commitment:
+    threshold: 0.85
+policy:
+  intervene_on: warn
+  escalate_critical_count: 2
+intervention:
+  type: residual_steering
+  coefficient: 1.0
+telemetry:
+  save_prompt_text: false
+  save_state_receipt: true
+  hash_prompt_id: true
