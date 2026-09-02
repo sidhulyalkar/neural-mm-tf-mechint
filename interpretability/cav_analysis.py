@@ -1,19 +1,19 @@
-# interpretability/cav_analysis.py
-"""
-This module provides functions to compute concept activation vectors.
+"""A binary linear concept probe, not a complete TCAV significance analysis."""
 
-Functions:
-    compute_cav(activations, concepts): Computes concept activation vector.
-"""
-import torch
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 
-def compute_cav(activations, concepts, layer='transformer'):
+
+def compute_cav(activations, concepts):
+    """Fit a concept separator on caller-provided [samples,features] activations.
+
+    Fit and evaluate probes on independent data. This utility returns the raw
+    classifier direction; it does not collect activations or test causal effects.
     """
-    Given activations and binary labels for a concept,
-    fit linear classifier and return concept activation vector.
-    """
-    # activations: [samples, features]
-    clf = LogisticRegression().fit(activations, concepts)
-    return clf.coef_[0]
+    activations, concepts = np.asarray(activations), np.asarray(concepts)
+    if activations.ndim != 2 or concepts.shape != (len(activations),):
+        raise ValueError("Expected [samples, features] activations and [samples] labels")
+    if set(np.unique(concepts)) != {0, 1}:
+        raise ValueError("Concept labels must include both 0 and 1")
+    classifier = LogisticRegression(random_state=0, max_iter=1000).fit(activations, concepts)
+    return classifier.coef_[0]

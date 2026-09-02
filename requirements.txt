@@ -1,6 +1,1 @@
-torch
-torchvision
-PyYAML
-numpy
-streamlit
-scikit-learn
+-e .[dashboard,concepts]

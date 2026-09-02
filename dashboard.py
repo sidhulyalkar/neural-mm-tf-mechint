@@ -1,87 +1,89 @@
-# interpretability/dashboard.py
-"""
-This module provides a Streamlit dashboard for visualizing attention maps and ablation study results for the multimodal transformer model.
+"""Inspect a saved synthetic run: curves, predictions, temporal attention, ablations."""
 
-Functions:    
-    main: The main function that runs the Streamlit dashboard.
-    load_model: Loads the model from a checkpoint.
+import json
+from pathlib import Path
 
-Imports:    
-    streamlit: Module for building Streamlit applications.    
-    torch: Module for defining neural network layers.    
-    yaml: Module for working with YAML files.    
-    model: Module for defining the MultimodalTransformer model.    
-    dataloaders: Module for loading data.    
-    interpretability.attention_analysis: Module for attention analysis.    
-    interpretability.ablation_study: Module for ablation study.    
-    interpretability.cav_analysis: Module for concept activation vector analysis.   
-"""
+import matplotlib.pyplot as plt
+import pandas as pd
 import streamlit as st
 import torch
-import yaml
-from model import MultimodalTransformer
-from dataloaders import get_loader
-from interpretability.attention_analysis import extract_attention_maps
+
+from dataloaders import get_loader, prepare_batch
 from interpretability.ablation_study import ablate_heads
-from interpretability.cav_analysis import compute_cav
+from interpretability.attention_analysis import extract_attention_maps
+from train import load_checkpoint
 
-@st.cache(allow_output_mutation=True)
-def load_model(cfg):
-    """
-    Loads a MultimodalTransformer model from a checkpoint path specified in the configuration dictionary.
-
-    Args:
-        cfg (dict): The configuration dictionary containing the model path.
-
-    Returns:
-        model (MultimodalTransformer): The loaded model.
-    """
-    model = MultimodalTransformer(cfg)
-    model.load_state_dict(torch.load(cfg['interpretability']['model_path'], map_location='cpu'))
-    model.eval()
-    return model
 
 def main():
-    """
-    The main function that runs the Streamlit dashboard.
+    st.set_page_config(page_title="Multimodal Neural Modeling", layout="wide")
+    st.title("Multimodal Neural Modeling")
+    st.caption("Neural features · video embeddings · behavioral events · task metadata")
+    st.info(
+        "Synthetic research demo. Metrics describe the generated task, not biological decoding performance."
+    )
+    run_dir = Path(st.sidebar.text_input("Run directory", "runs/demo"))
+    checkpoint_path = run_dir / "checkpoint.pt"
+    if not checkpoint_path.is_file():
+        st.write("Train the CPU example to create a checkpoint and evaluation artifacts:")
+        st.code("python train.py --config configs/config.yaml --output runs/demo")
+        return
+    try:
+        # Each rerun owns its model; temporary interventions never mutate a shared cache.
+        model, checkpoint = load_checkpoint(checkpoint_path)
+        metrics = json.loads((run_dir / "metrics.json").read_text())
+        ablations = json.loads((run_dir / "ablations.json").read_text())
+    except (OSError, ValueError, RuntimeError, KeyError) as error:
+        st.error(f"Cannot load this run: {error}")
+        return
+    cfg = checkpoint["config"]
+    cols = st.columns(3)
+    cols[0].metric("Transformer test MSE", f"{metrics['test_mse']:.4f}")
+    cols[1].metric("Constant baseline MSE", f"{metrics['test_baselines']['constant_mse']:.4f}")
+    cols[2].metric("Linear ridge MSE", f"{metrics['test_baselines']['ridge_mse']:.4f}")
+    st.caption(
+        f"Checkpoint selected on validation data at epoch {checkpoint['best_epoch']}. Lower MSE is better."
+    )
+    st.subheader("Training and validation")
+    st.line_chart(pd.DataFrame(metrics["history"]).set_index("epoch"))
+    inputs, target = prepare_batch(next(iter(get_loader(cfg, "test"))))
+    with torch.no_grad():
+        predictions = model(**inputs)
+    st.subheader("Held-out sequence")
+    st.line_chart(
+        pd.DataFrame({"target": target[0, :, 0].numpy(), "prediction": predictions[0, :, 0].numpy()})
+    )
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Temporal attention")
+        layer = st.selectbox("Layer", range(cfg["model"]["num_layers"]))
+        head = st.selectbox("Head", range(cfg["model"]["n_heads"]))
+        attention = extract_attention_maps(model, inputs, layer, head)
+        fig, ax = plt.subplots(figsize=(5, 4))
+        image = ax.imshow(attention, cmap="viridis", aspect="auto")
+        ax.set(xlabel="Key timestep", ylabel="Query timestep")
+        fig.colorbar(image, ax=ax, label="Attention weight")
+        st.pyplot(fig)
+        plt.close(fig)
+        st.caption(
+            "These weights connect time positions after fusion; they are not modality attribution or causal evidence."
+        )
+    with right:
+        st.subheader("Modality removal")
+        table = pd.DataFrame.from_dict(ablations["ablations"], orient="index")
+        st.bar_chart(table[["delta_mse"]])
+        st.dataframe(table)
+        st.caption(
+            "Change in test MSE when one encoded branch is zeroed. All comparisons use the same samples; no retraining."
+        )
+        st.subheader("Head intervention")
+        heads = st.multiselect("Heads to ablate in selected layer", range(cfg["model"]["n_heads"]))
+        if st.button("Evaluate head ablation"):
+            baseline = (predictions - target).square().mean().item()
+            loss = ablate_heads(model, {**inputs, "target": target}, layer, heads)
+            st.write(
+                f"First test batch: baseline MSE {baseline:.5f}; ablated MSE {loss:.5f}; change {loss - baseline:+.5f}."
+            )
 
-    It loads the model, allows the user to specify a fine-tuned checkpoint, and then visualizes the attention maps and ablation study results.
 
-    The dashboard consists of three sections:
-    1. Attention visualization: The user can select a layer and head to visualize the attention map.
-    2. Ablation study: The user can select a layer and one or more heads to ablate, and then run the ablation study.
-    3. Concept activation vector analysis (placeholder): Compute CAVs on hidden activations (experimentally defined concepts).
-
-    """
-    st.title("🔍 Multimodal Transformer Interpretability")
-    cfg = yaml.safe_load(open('configs/config.yaml'))
-    # allow user to specify fine-tuned checkpoint
-    cfg['interpretability'] = {'model_path': st.text_input('Model checkpoint path', 'model.pt')}
-    model = load_model(cfg)
-
-    # Load a single batch
-    loader = get_loader(cfg)
-    batch = next(iter(loader))
-    inputs = dict(zip(['neural','video','behavior','meta','target'], batch))
-
-    # Attention visualization
-    st.header("Attention Maps")
-    layer = st.slider('Layer', 0, cfg['model']['num_layers']-1, 0)
-    head = st.slider('Head', 0, cfg['model']['n_heads']-1, 0)
-    attn = extract_attention_maps(model, inputs, layer, head)
-    st.line_chart(attn)
-
-    # Ablation study
-    st.header("Ablation Study")
-    layer_ab = st.number_input('Layer to ablate', 0, cfg['model']['num_layers']-1, 0)
-    heads_to_ablate = st.multiselect('Heads to ablate', list(range(cfg['model']['n_heads'])))
-    if st.button('Run Ablation'):
-        loss = ablate_heads(model, inputs, layer_ab, heads_to_ablate)
-        st.write(f"Post-ablation loss: {loss:.4f}")
-
-    # CAV analysis (placeholder)
-    st.header("Concept Activation Vectors")
-    st.write("Compute CAVs on hidden activations (experimentally defined concepts).")
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
