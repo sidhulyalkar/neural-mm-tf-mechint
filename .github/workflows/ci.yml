@@ -1,0 +1,29 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install CPU dependencies
+        run: |
+          python -m pip install 'torch>=2.2,<3' --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e '.[dev,dashboard,concepts]'
+      - name: Lint and test the pipeline and dashboard
+        run: |
+          python -m ruff check .
+          python -m pytest -q
+      - name: Build distributable package
+        run: python -m build

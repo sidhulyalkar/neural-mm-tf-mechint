@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "data_kind": "synthetic",
+  "seed": 42,
+  "split_ids": {
+    "train": 0,
+    "val": 1,
+    "test": 2
+  },
+  "device": "cpu",
+  "threads": 1,
+  "python": "3.12.13",
+  "torch": "2.14.0+cpu",
+  "numpy": "2.3.5",
+  "git_commit": "b860229e5072b6feb167a16b5f9e0295de2660a3",
+  "working_tree_dirty": true,
+  "source_sha256": {
+    "baselines.py": "8f9cfbd95232b693046ab163a450d7baaa0108de8760ee1cde57e87cc776cdfa",
+    "configuration.py": "d28f3295aefbdb5c29f30ddb3b0828eb0756ca99eb79fd4a4255594a33375cf0",
+    "dashboard.py": "b8a62804737f8a2d2d8e571d95456cfbd0dc3185b70977c0e18020af3011109f",
+    "data_simulation.py": "09d8950512357cf06670688ba09761b94f56ca0104029bad8bdc512e4248f2be",
+    "dataloaders.py": "9929ae69700e31c9ebc021d328f0e3db09a2d3671be5369a271eb89f2d2e5ae4",
+    "encoders/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "encoders/behavior_encoder.py": "6717ee0d570cf038670cc23f731a91860b3bad250ec14b76241091a6ff9827c3",
+    "encoders/metadata_encoder.py": "a63ccbecd960c171c580d197472b88555b4881c51cd65494b9f7215a6658e4b6",
+    "encoders/neural_encoder.py": "ace304ede1f79a86a68c6d96853206f40aac8b2e69feecae59cc809537c4692b",
+    "encoders/video_encoder.py": "a878bc15f01d2daec0ab21cc2bfc81a4f7f7e9efdd24358ad9e4aa9cfe29a1c6",
+    "fusion.py": "0a9fa5acc4fb0f808f5ec2c0f3c4921930d9a0a59db2db451acc574024480b8b",
+    "interpretability/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "interpretability/ablation_study.py": "8d36cd23cf911db55d7ca5751fb2b3f278fc6497d3d97b8a3e608f63ad7a0a4d",
+    "interpretability/attention_analysis.py": "495c8cac18eeb28993494c8a0d8187bc91dc2556df2c5dff082cbeb0bb510969",
+    "interpretability/cav_analysis.py": "a0e65afc9b5a54806b2e41a81bdec174bbe9524c6a3e13e3270fb8f3a80b4227",
+    "interpretability/evaluation.py": "bef5e7f0a2616e28ad110f8b11d85ae7978dcce184b71e4691e8135545fd1d3d",
+    "model.py": "e9016a4ebe13eeb7438ef6b52935de78ed319b240e2bebb00ccb2a6e3f65c912",
+    "setup.py": "5881591b246436f7983115a4b7fe02e1a5d825ce1a930fcf7490718dd74c4c77",
+    "train.py": "688a7712f229251d192680edda296c3f4e6aaf660fe6bb735f897415f721427c"
+  },
+  "parameters": 67777,
+  "config_sha256": "25f094b51616e9ce1faa8ec757e96b7ec56fa8d5a52f8add3f1c06f7ba2b1391"
+}
